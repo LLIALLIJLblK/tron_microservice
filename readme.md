@@ -6,13 +6,12 @@ git clone https://github.com/LLIALLIJLblK/tron_microservice.git
 ```
 API KEY
 ```
-вставьте ваш api key в коронеь проекта в файл .env
+вставьте ваш api key в корень проекта в файл .env
 ```
 Запустите проект
 ```bash
 make all
 ```
-
 Запустить тесты
 ```bash
 make test
@@ -25,7 +24,6 @@ make logs
 ```bash
 make down
 ```
-
 Удалить проект
 ```bash
 make delete
