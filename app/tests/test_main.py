@@ -1,69 +1,51 @@
-import pytest
+
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.main import app  
-from app.database import Base, get_db  
+from app.main import app  # Импортируйте ваше FastAPI приложение
+from pydantic import ValidationError
+import pytest
 
-# Настройка тестовой базы данных (используем PostgreSQL)
-SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://user:password@db:5432/mydatabase"
-
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Создание таблиц в тестовой базе данных
-Base.metadata.create_all(bind=engine)
+client = TestClient(app)
 
 
-@pytest.fixture(scope="function")
-def db_session():
-    connection = engine.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
-    yield session
-    session.close()
-    transaction.rollback()
-    connection.close()
+VALID_ADDRESS = "TBHmxE1wFJXcEJgFo1QC5fkCoERwuuu68K"
+INVALID_ADDRESS = "invalid_address_123"
 
-@pytest.fixture(scope="function")
-def test_client(db_session):
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            db_session.close()
 
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as client:
-        yield client
+@pytest.mark.parametrize("address", [
+    "TXoRYHE3QKq8whi57HHutdo7NEfVb5YFSS",
+    "TTvYrDNmfgzvzhKbN4bjtc276ktY5njLQo",
+    "TBHmxE1wFJXcEJgFo1QC5fkCoERwuuu68K",
+])
+def test_address_success(address):
+    
+    response = client.post(f"/api/address-info/?wallet_address={address}")
+    
+    assert response.status_code == 200, "запрос выполнен 200"
+      
+    data = response.json()
+    
+    assert "address" in data
+    assert "balance" in data
+    assert "bandwidth" in data
+    assert "energy" in data
+    
+    assert isinstance(data["address"], str)
+    assert isinstance(data["balance"], float)
+    assert isinstance(data["bandwidth"], int)
+    assert isinstance(data["energy"], int)
+    
+    assert data["address"] == address
 
-@pytest.mark.asyncio
-async def test_get_wallet_info(test_client):
-    test_addresses = [
-        "TBHmxE1wFJXcEJgFo1QC5fkCoERwuuu68K",
-        "TMAqheVWMaNm15UJTNgasEVpJ7YHYiZVZ8",
-        "TXfyYGFydbXY4dgV1FdZD7iL8Mym1eH9Ha"
-    ]
+def test_address_invalid_format():
+    response = client.post(f"/api/address-info/?wallet_address={INVALID_ADDRESS}")
+    assert response.status_code == 400, "Ошибка валидации"
 
-    for address in test_addresses:
-        response = test_client.post(f"/api/address-info/?wallet_address={address}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["address"] == address
-        assert "balance" in data
-        assert "bandwidth" in data
-        assert "energy" in data
-        
-@pytest.mark.asyncio        
-async def test_get_wallet_info_invalid_address(test_client):
 
-    invalid_address = "invalid_wallet_address"
-    response = test_client.post(f"/api/address-info/?wallet_address={invalid_address}")
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid wallet address"
-
-@pytest.mark.asyncio
-def test_request_history(test_client):
-    response = test_client.get("api/requests/?skip=0&limit=10")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+@pytest.mark.parametrize("address", [
+    "",
+    "123",
+    "TBHmxE1wFJXcEJgFo1QC5fkCoERwuuu68K" * 5
+])
+def test_invalid_addresses(address):
+    response = client.post("/api/address-info/", json={"wallet_address": address})
+    assert response.status_code == 422

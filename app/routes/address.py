@@ -12,8 +12,6 @@ import os
 
 load_dotenv()
 
-
-
 router = APIRouter(prefix="/api")
 
 TRON_API_KEY = os.getenv("TRON_API_KEY")

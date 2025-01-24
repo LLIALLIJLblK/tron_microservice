@@ -1,49 +1,64 @@
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session,sessionmaker
+from sqlalchemy import create_engine, text
+from app.models import Base
+from fastapi.testclient import TestClient
+from app.main import app
+from datetime import datetime
 
-from app.database import Base, get_db
-from app import models
+client = TestClient(app)
 
+@pytest.fixture(scope="module")
+def db_engine():
 
-TEST_DATABASE_URL = "postgresql+psycopg2://user:password@testdb:5432/testdb"
+    engine = create_engine("postgresql+psycopg2://user:password@db:5432/mydatabase")
 
-test_engine = create_engine(TEST_DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-
-
-@pytest.fixture(scope="function")
-def db_session():
+    try:
+        with engine.connect() as test_conn:
+            test_conn.execute(text("SELECT 1"))
+    except Exception as e:
+        pytest.fail(f"Не удалось подключиться к БД: {str(e)}")
     
-    Base.metadata.create_all(bind=test_engine)
-    connection = test_engine.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
-    yield session
-    session.close()
+    Base.metadata.create_all(engine)
+    yield engine
+    Base.metadata.drop_all(engine)
+    engine.dispose()
 
-    connection.close()
+@pytest.fixture(autouse=True)
+def cleanup_tables(db_engine):
+    with db_engine.connect() as connection:
+        connection.execute(text("TRUNCATE TABLE wallet_requests RESTART IDENTITY CASCADE"))
+        connection.commit()
+
+def test_address_info_writes_to_db(db_engine):
+    test_address = "TBHmxE1wFJXcEJgFo1QC5fkCoERwuuu68K"
     
+    #Проверка пустой таблицы 
+    with db_engine.connect() as connection:
+        initial_count = connection.execute(text("SELECT COUNT(*) FROM wallet_requests")).scalar()
+    assert initial_count == 0, "Таблица должна быть пустой перед тестом"
 
-def test_create_wallet_request(db_session: Session):
-
-    wallet_data = {
-        "wallet_address": "TBHmxE1wFJXcEJgFo1QC5fkCoERwuuu68K",
-        "balance": 100.0,
-        "bandwidth": 500,
-        "energy": 200
-    }
-
-    wallet_request = models.WalletRequest(**wallet_data)
-
-    db_session.add(wallet_request)
-    db_session.commit()
-    db_session.refresh(wallet_request)
-
-    saved_wallet_request = db_session.query(models.WalletRequest).filter_by(wallet_address=wallet_data["wallet_address"]).first()
+    #Вызов метода
+    response = client.post(f"/api/address-info/?wallet_address={test_address}")
+    assert response.status_code == 200, "Запрос должен возвращать 200 OK"
     
-    assert saved_wallet_request is not None
-    assert saved_wallet_request.wallet_address == wallet_data["wallet_address"]
-    assert saved_wallet_request.balance == wallet_data["balance"]
-    assert saved_wallet_request.bandwidth == wallet_data["bandwidth"]
-    assert saved_wallet_request.energy == wallet_data["energy"]
+    #Проверяем структуру ответа
+    response_data = response.json()
+    assert set(response_data.keys()) == {"address", "balance", "bandwidth", "energy"}, "Некорректные поля в ответе"
+    
+    # Проверяем запись в БД
+    with db_engine.connect() as connection:
+        result = connection.execute(
+            text("SELECT * FROM wallet_requests WHERE wallet_address = :wallet_address"),
+            {"wallet_address": test_address}
+        )
+        db_record = result.fetchone()
+
+    assert db_record is not None, "Запись не найдена в БД"
+
+    assert db_record.wallet_address == test_address, "Адрес кошелька не совпадает"
+    assert float(db_record.balance) == pytest.approx(response_data["balance"], abs=1e-8), "Баланс не совпадает"
+    assert db_record.bandwidth == response_data["bandwidth"], "Bandwidth не совпадает"
+    assert db_record.energy == response_data["energy"], "Energy не совпадает"
+
+    assert isinstance(db_record.created_at, datetime), "Отсутствует временная метка"
+    assert (datetime.utcnow() - db_record.created_at).total_seconds() < 60, "Некорректное время создания"
