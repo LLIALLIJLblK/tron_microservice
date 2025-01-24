@@ -6,6 +6,7 @@ all:
 	docker-compose build
 	sleep 3
 	docker-compose up -d
+	sleep 5
 
 down:
 	docker-compose down
