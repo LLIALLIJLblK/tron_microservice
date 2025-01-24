@@ -26,7 +26,7 @@ make logs
 make down
 ```
 
-Удалить проект
+Удалить контейнеры
 ```bash
 make delete
 ```
