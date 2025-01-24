@@ -1,18 +1,17 @@
 ### Как запустить проект
 
-Склонировать репозиторий и перейти в него в командной строке:
+Склонировать репозиторий
 ```
 git clone https://github.com/LLIALLIJLblK/tron_microservice.git
 ```
 API KEY
 ```
-вставьте ваш api key в коронеь проекта в файл .env
+вставьте ваш api key в корень проекта в файл .env
 ```
 Запустите проект
 ```bash
 make all
 ```
-
 Запустить тесты
 ```bash
 make test
@@ -29,6 +28,10 @@ make down
 Удалить контейнеры
 ```bash
 make delete
+```
+документация
+```bash
+localhost:80/docs
 ```
 ### Источники
 
